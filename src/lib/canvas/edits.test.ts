@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deleteSelection, duplicateNode, setNodeStyle } from './edits';
+import { deleteSelection, duplicateNode, readDirection, setDirection, setNodeStyle } from './edits';
 import type { CanvasSelection } from './interaction.svelte';
 import { buildSourceMap } from './sourceMap';
 
@@ -75,6 +75,33 @@ describe('deleteSelection', () => {
   it('returns the code unchanged when nothing maps to the selection', () => {
     const map = buildSourceMap(CODE);
     expect(deleteSelection(CODE, map, selection('edge', 'L_X_Y_0'))).toBe(CODE);
+  });
+});
+
+describe('direction', () => {
+  it('reads the declared direction', () => {
+    expect(readDirection(CODE)).toBe('TD');
+    expect(readDirection('flowchart LR\n  A --> B')).toBe('LR');
+  });
+
+  it('normalises TB to TD, since Mermaid treats them the same', () => {
+    expect(readDirection('flowchart TB\n  A --> B')).toBe('TD');
+  });
+
+  it('rewrites the header without touching the body', () => {
+    const next = setDirection(CODE, 'LR');
+    expect(next.split('\n')[0]).toBe('flowchart LR');
+    expect(next).toContain('A[Start] --> B{Choice}');
+  });
+
+  it('adds a direction to a bare flowchart header', () => {
+    expect(setDirection('flowchart\n  A --> B', 'RL')).toContain('flowchart RL');
+  });
+
+  it('leaves non-flowchart diagrams untouched', () => {
+    const sequence = 'sequenceDiagram\n  A->>B: hi';
+    expect(setDirection(sequence, 'LR')).toBe(sequence);
+    expect(readDirection(sequence)).toBeUndefined();
   });
 });
 

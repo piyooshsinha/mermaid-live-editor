@@ -106,6 +106,35 @@ export const deleteSelection = (
   return lines.filter((_, index) => !doomed.has(index + 1)).join('\n');
 };
 
+export type LayoutDirection = 'BT' | 'LR' | 'RL' | 'TD';
+
+/** The direction currently declared on the diagram header, if any. */
+export const readDirection = (code: string): LayoutDirection | undefined => {
+  const match = /^\s*(?:flowchart|graph)\s+(TB|TD|BT|LR|RL)\b/im.exec(code);
+  if (!match) {
+    return undefined;
+  }
+  // TB and TD mean the same thing to Mermaid; normalise so the UI shows one.
+  const value = match[1].toUpperCase();
+  return value === 'TB' ? 'TD' : (value as LayoutDirection);
+};
+
+/**
+ * Rewrites the flowchart header's direction.
+ *
+ * Only flowcharts carry direction in the header this way, so anything else is
+ * returned untouched rather than being given a header it cannot parse.
+ */
+export const setDirection = (code: string, direction: LayoutDirection): string => {
+  const pattern = /^(\s*)(flowchart|graph)(\s+)(TB|TD|BT|LR|RL)\b/im;
+  if (pattern.test(code)) {
+    return code.replace(pattern, `$1$2$3${direction}`);
+  }
+  // A bare `flowchart` with no direction is still valid; add one.
+  const bare = /^(\s*)(flowchart|graph)(\s*)$/im;
+  return bare.test(code) ? code.replace(bare, `$1$2 ${direction}`) : code;
+};
+
 /** Finds an unused node id derived from `base`, e.g. `API` -> `API2`. */
 const freeId = (code: string, base: string): string => {
   for (let suffix = 2; suffix < 500; suffix++) {

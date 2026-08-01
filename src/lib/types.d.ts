@@ -43,6 +43,11 @@ export interface State {
   autoLayout?: boolean;
   /** Manual node positions in diagram coordinates, keyed by Mermaid node id. */
   nodePositions?: Record<string, NodePosition>;
+  /**
+   * Bend points for manually routed edges, keyed by edge key (`L_A_B_0`).
+   * An edge with no entry is drawn as a straight run between its nodes.
+   */
+  edgeWaypoints?: Record<string, NodePosition[]>;
 }
 
 export interface NodePosition {

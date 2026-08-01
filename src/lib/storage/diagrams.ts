@@ -31,6 +31,8 @@ export interface SavedDiagram {
   createdAt: number;
   /** Starred diagrams sort to the top of the dashboard. */
   favorite?: boolean;
+  /** Manual edge routes, keyed by edge key. */
+  edgeWaypoints?: Record<string, NodePosition[]>;
   id: string;
   name: string;
   nodePositions?: Record<string, NodePosition>;
@@ -38,12 +40,16 @@ export interface SavedDiagram {
 }
 
 /** Fields we persist from the editor state. */
-export type DiagramDraft = Pick<State, 'autoLayout' | 'code' | 'mermaid' | 'nodePositions'>;
+export type DiagramDraft = Pick<
+  State,
+  'autoLayout' | 'code' | 'edgeWaypoints' | 'mermaid' | 'nodePositions'
+>;
 
 /** The stored fields, in the shape the editor state expects them back. */
 export const draftOf = (diagram: SavedDiagram): DiagramDraft => ({
   autoLayout: diagram.autoLayout,
   code: diagram.code,
+  edgeWaypoints: diagram.edgeWaypoints,
   mermaid: diagram.config,
   nodePositions: diagram.nodePositions
 });
@@ -103,6 +109,7 @@ export const saveDiagram = async (name: string, draft: DiagramDraft): Promise<Sa
     code: draft.code,
     config: draft.mermaid,
     createdAt: now,
+    edgeWaypoints: draft.edgeWaypoints,
     id: crypto.randomUUID(),
     name: name.trim() || 'Untitled diagram',
     nodePositions: draft.nodePositions,
@@ -116,7 +123,10 @@ export const saveDiagram = async (name: string, draft: DiagramDraft): Promise<Sa
 export const updateDiagram = async (
   id: string,
   patch: Partial<
-    Pick<SavedDiagram, 'autoLayout' | 'code' | 'config' | 'favorite' | 'name' | 'nodePositions'>
+    Pick<
+      SavedDiagram,
+      'autoLayout' | 'code' | 'config' | 'edgeWaypoints' | 'favorite' | 'name' | 'nodePositions'
+    >
   >
 ): Promise<SavedDiagram | undefined> => {
   const existing = await getDiagram(id);

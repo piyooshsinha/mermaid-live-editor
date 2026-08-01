@@ -49,16 +49,21 @@
       return;
     }
     const isManualLayout = () => validatedState.current.autoLayout === false;
+    // A working copy the interaction layer mutates during a drag; it is
+    // committed to state on pointer-up.
+    const waypoints = structuredClone(validatedState.current.edgeWaypoints ?? {});
     if (isManualLayout()) {
-      applyManualLayout(graphDiv, validatedState.current.nodePositions ?? {});
+      applyManualLayout(graphDiv, validatedState.current.nodePositions ?? {}, waypoints);
     }
     detachCanvas = attachCanvas(graphDiv, {
       isManualLayout,
       onMove: (nodePositions) => updateCodeStore({ nodePositions }),
+      onReroute: (edgeWaypoints) => updateCodeStore({ edgeWaypoints }),
       panZoomState,
-      reflow: (scene) => reflowEdges(graphDiv, scene),
+      reflow: (scene, routes) => reflowEdges(graphDiv, scene, routes),
       // Rebuilt per render so selection always maps to the current text.
-      sourceMap: buildSourceMap(state.code)
+      sourceMap: buildSourceMap(state.code),
+      waypoints
     });
   };
 

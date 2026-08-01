@@ -11,6 +11,7 @@
   import { clearSelection } from '$/canvas/interaction.svelte';
   import { Switch } from '$/components/ui/switch';
   import { updateCodeStore, validatedState } from '$/util/state.svelte';
+  import LayoutDirectionMenu from './LayoutDirectionMenu.svelte';
 
   const isAuto = $derived(validatedState.current.autoLayout !== false);
 
@@ -37,4 +38,9 @@
     class="data-[state=checked]:bg-accent"
     aria-label="Toggle automatic layout"
     data-testid="auto-layout-toggle" />
+  <!-- Direction only means anything while Mermaid owns the layout. -->
+  {#if isAuto}
+    <span class="mx-1 h-5 w-px bg-border"></span>
+    <LayoutDirectionMenu />
+  {/if}
 </div>

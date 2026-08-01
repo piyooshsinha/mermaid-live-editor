@@ -46,8 +46,8 @@
 
   /** The layout fields travel with the diagram, or a manual arrangement is lost. */
   const currentDraft = () => {
-    const { autoLayout, code, mermaid, nodePositions } = validatedState.current;
-    return { autoLayout, code, mermaid, nodePositions };
+    const { autoLayout, code, edgeWaypoints, mermaid, nodePositions } = validatedState.current;
+    return { autoLayout, code, edgeWaypoints, mermaid, nodePositions };
   };
 
   const save = async () => {
@@ -67,9 +67,15 @@
       return;
     }
     error = '';
-    const { autoLayout, code, mermaid, nodePositions } = currentDraft();
+    const { autoLayout, code, edgeWaypoints, mermaid, nodePositions } = currentDraft();
     try {
-      await updateDiagram(currentId, { autoLayout, code, config: mermaid, nodePositions });
+      await updateDiagram(currentId, {
+        autoLayout,
+        code,
+        config: mermaid,
+        edgeWaypoints,
+        nodePositions
+      });
       await refresh();
     } catch (error_) {
       error = error_ instanceof Error ? error_.message : String(error_);

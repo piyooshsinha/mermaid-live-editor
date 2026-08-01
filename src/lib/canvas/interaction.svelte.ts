@@ -17,6 +17,7 @@ import {
   type Scene,
   type SceneNode
 } from './scene';
+import { midpointOf } from './applyLayout';
 import type { SourceMap } from './sourceMap';
 
 export interface CanvasSelection {
@@ -79,10 +80,14 @@ export interface CanvasOptions {
   /** Whether manual layout is on; dragging is disabled when it is not. */
   isManualLayout: () => boolean;
   onMove: (positions: Record<string, NodePosition>) => void;
+  /** Commits a reshaped edge route. */
+  onReroute: (waypoints: Record<string, NodePosition[]>) => void;
   panZoomState: PanZoomState;
-  /** Redraws edges live while a node is being dragged. */
-  reflow: (scene: Scene) => void;
+  /** Redraws edges live while something is being dragged. */
+  reflow: (scene: Scene, waypoints: Record<string, NodePosition[]>) => void;
   sourceMap: SourceMap;
+  /** Existing manual edge routes, mutated in place as the user drags. */
+  waypoints: Record<string, NodePosition[]>;
 }
 
 /**
@@ -126,6 +131,7 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   syncHitPaths();
 
   let dragging: { node: SceneNode; originX: number; originY: number } | undefined;
+  let bending: { index: number; key: string } | undefined;
   let pointerOrigin: { x: number; y: number } | undefined;
 
   const drawSelection = () => {
@@ -162,6 +168,59 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     trace.setAttribute('stroke-width', '3');
     trace.setAttribute('stroke-opacity', '0.65');
     overlay.append(trace);
+
+    if (options.isManualLayout()) {
+      drawEdgeHandles(edge.key);
+    }
+  };
+
+  /**
+   * Draggable dots for reshaping an edge: one per existing bend, plus a hollow
+   * "ghost" at the midpoint that becomes a new bend when dragged. This is the
+   * usual convention, and it keeps a straight edge from showing clutter it
+   * does not need yet.
+   */
+  const drawEdgeHandles = (key: string) => {
+    const bends = options.waypoints[key] ?? [];
+
+    const dot = (point: NodePosition, index: number, ghost: boolean) => {
+      const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      handle.setAttribute('cx', String(point.x));
+      handle.setAttribute('cy', String(point.y));
+      handle.setAttribute('r', ghost ? '5' : '6');
+      handle.setAttribute('fill', ghost ? '#ffffff' : ACCENT);
+      handle.setAttribute('stroke', ACCENT);
+      handle.setAttribute('stroke-width', '2');
+      handle.style.pointerEvents = 'all';
+      handle.style.cursor = 'grab';
+      handle.dataset.waypointIndex = String(index);
+      handle.dataset.waypointGhost = ghost ? 'true' : 'false';
+      overlay.append(handle);
+    };
+
+    for (const [index, bend] of bends.entries()) {
+      dot(bend, index, false);
+    }
+
+    // The ghost sits on the midpoint of the current route.
+    const geometry = edgeGeometry(key);
+    if (geometry) {
+      dot(midpointOf(geometry.points), geometry.insertAt, true);
+    }
+  };
+
+  /** Current polyline of an edge plus where a midpoint bend would slot in. */
+  const edgeGeometry = (key: string): { insertAt: number; points: NodePosition[] } | undefined => {
+    const edge = scene.edges.find((candidate) => candidate.key === key);
+    const from = edge ? byId[edge.from] : undefined;
+    const to = edge ? byId[edge.to] : undefined;
+    if (!edge || !from || !to) {
+      return undefined;
+    }
+    const bends = options.waypoints[key] ?? [];
+    const points = [{ x: from.x, y: from.y }, ...bends, { x: to.x, y: to.y }];
+    // Insert into the middle segment so the new bend lands where the ghost is.
+    return { insertAt: Math.floor(bends.length / 2), points };
   };
 
   const rectOf = (element: SVGGraphicsElement): DOMRect => element.getBoundingClientRect();
@@ -204,6 +263,33 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   };
 
   const onPointerDown = (event: PointerEvent) => {
+    // Edge waypoint handles take precedence: they sit on top of everything.
+    const handle = event.target;
+    if (
+      handle instanceof SVGElement &&
+      handle.dataset.waypointIndex !== undefined &&
+      selection?.kind === 'edge'
+    ) {
+      event.stopPropagation();
+      event.preventDefault();
+      const key = selection.id;
+      const index = Number(handle.dataset.waypointIndex);
+      const bends = [...(options.waypoints[key] ?? [])];
+      if (handle.dataset.waypointGhost === 'true') {
+        // Materialise the ghost into a real bend at the pointer.
+        bends.splice(index, 0, toDiagram(event.clientX, event.clientY));
+      }
+      options.waypoints[key] = bends;
+      bending = { index, key };
+      options.panZoomState.suspendPan();
+      try {
+        svg.setPointerCapture(event.pointerId);
+      } catch {
+        // Best effort; the drag still works without capture.
+      }
+      return;
+    }
+
     const group = nodeGroupFrom(event.target);
     if (group) {
       const id = nodeIdOf(group);
@@ -257,6 +343,17 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   };
 
   const onPointerMove = (event: PointerEvent) => {
+    if (bending) {
+      const bends = options.waypoints[bending.key];
+      if (bends?.[bending.index]) {
+        bends[bending.index] = toDiagram(event.clientX, event.clientY);
+        options.reflow(scene, options.waypoints);
+        syncHitPaths();
+        refreshSelection();
+      }
+      return;
+    }
+
     if (!dragging || !pointerOrigin) {
       if (!dragging) {
         const group = nodeGroupFrom(event.target);
@@ -271,12 +368,24 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
       'transform',
       `translate(${dragging.node.x}, ${dragging.node.y})`
     );
-    options.reflow(scene);
+    options.reflow(scene, options.waypoints);
     syncHitPaths();
     refreshSelection();
   };
 
   const endDrag = (event: PointerEvent) => {
+    if (bending) {
+      bending = undefined;
+      try {
+        svg.releasePointerCapture(event.pointerId);
+      } catch {
+        // Nothing was captured; releasing is best-effort.
+      }
+      options.panZoomState.resumePan();
+      options.onReroute({ ...options.waypoints });
+      return;
+    }
+
     if (!dragging) {
       return;
     }
