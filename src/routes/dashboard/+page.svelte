@@ -13,6 +13,7 @@
   import { Input } from '$/components/ui/input';
   import {
     deleteDiagram,
+    draftOf,
     duplicateDiagram,
     listDiagrams,
     toggleFavorite,
@@ -56,7 +57,9 @@
 
   /** Loads a diagram into the editor state, then navigates to it. */
   const openDiagram = async (diagram: SavedDiagram) => {
-    updateCodeStore({ code: diagram.code, mermaid: diagram.config, updateDiagram: true });
+    // draftOf carries the layout fields too, so a manually arranged diagram
+    // reopens as it was saved.
+    updateCodeStore({ ...draftOf(diagram), updateDiagram: true });
     await goto(resolve('/edit', {}));
   };
 

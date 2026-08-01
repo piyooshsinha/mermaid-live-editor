@@ -1,3 +1,12 @@
+<script lang="ts" module>
+  /**
+   * Module-scoped so every thumbnail on the page shares one queue. A instance
+   * variable would give each card its own tail, which is no sequencing at all —
+   * exactly the concurrent-render race this is meant to prevent.
+   */
+  let queue = Promise.resolve();
+</script>
+
 <script lang="ts">
   /**
    * Renders a saved diagram to an inline SVG preview.
@@ -21,9 +30,6 @@
 
   let svg = $state('');
   let failed = $state(false);
-
-  // Shared tail so every thumbnail on the page renders in turn.
-  let queue = Promise.resolve();
 
   const renderThumbnail = async () => {
     try {

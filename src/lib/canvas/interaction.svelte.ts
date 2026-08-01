@@ -100,9 +100,19 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     drawSelection(svg, node);
   };
 
-  /** Converts a client point into diagram coordinates. */
+  /**
+   * Converts a client point into diagram coordinates.
+   *
+   * The CTM has to come from the pan/zoom viewport group, not the root SVG:
+   * node transforms live inside that group, so the root's CTM omits the pan and
+   * zoom applied to it. Using the root would leave drags unscaled — at 2x zoom
+   * a 20px drag would move the node 20 units instead of 10.
+   */
   const toDiagram = (clientX: number, clientY: number): { x: number; y: number } => {
-    const matrix = svg.getScreenCTM();
+    const reference =
+      svg.querySelector<SVGGraphicsElement>('g.svg-pan-zoom_viewport') ??
+      (svg as SVGGraphicsElement);
+    const matrix = reference.getScreenCTM();
     if (!matrix) {
       return { x: clientX, y: clientY };
     }

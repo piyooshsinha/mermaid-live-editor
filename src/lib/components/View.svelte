@@ -25,6 +25,7 @@
   let view: HTMLDivElement | undefined = $state();
   let error = $state(false);
   let panZoom = true;
+  let autoLayout = true;
   let manualUpdate = true;
   let waitForFontAwesomeToLoad: FontAwesome['waitForFontAwesomeToLoad'] | undefined = $state();
 
@@ -79,6 +80,10 @@
         manualUpdate = true;
         // Do not render if there is no change in Code/Config/PanZoom
         if (
+          // autoLayout is part of the guard because turning it back on must
+          // re-render to discard the manual transforms written onto the SVG;
+          // nothing else about the diagram changes at that moment.
+          autoLayout === (state.autoLayout !== false) &&
           code === state.code &&
           config === state.mermaid &&
           rough === state.rough &&
@@ -93,6 +98,7 @@
 
         code = state.code;
         config = state.mermaid;
+        autoLayout = state.autoLayout !== false;
         rough = state.rough;
         panZoom = state.panZoom ?? true;
 

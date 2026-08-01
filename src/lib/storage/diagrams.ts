@@ -12,13 +12,19 @@
  * share a single diagram.
  */
 
-import type { State } from '$/types';
+import type { NodePosition, State } from '$/types';
 
 const DB_NAME = 'mermaid-diagrams';
 const DB_VERSION = 1;
 const STORE = 'diagrams';
 
 export interface SavedDiagram {
+  /**
+   * Whether the diagram was manually arranged. Saved alongside the positions
+   * because without it a reopened diagram would silently fall back to
+   * Mermaid's layout and discard the user's arrangement.
+   */
+  autoLayout?: boolean;
   code: string;
   /** Mermaid config JSON, so a reload restores theme and settings too. */
   config: string;
@@ -27,11 +33,20 @@ export interface SavedDiagram {
   favorite?: boolean;
   id: string;
   name: string;
+  nodePositions?: Record<string, NodePosition>;
   updatedAt: number;
 }
 
 /** Fields we persist from the editor state. */
-export type DiagramDraft = Pick<State, 'code' | 'mermaid'>;
+export type DiagramDraft = Pick<State, 'autoLayout' | 'code' | 'mermaid' | 'nodePositions'>;
+
+/** The stored fields, in the shape the editor state expects them back. */
+export const draftOf = (diagram: SavedDiagram): DiagramDraft => ({
+  autoLayout: diagram.autoLayout,
+  code: diagram.code,
+  mermaid: diagram.config,
+  nodePositions: diagram.nodePositions
+});
 
 let connection: Promise<IDBDatabase> | undefined;
 
@@ -84,11 +99,13 @@ export const getDiagram = (id: string): Promise<SavedDiagram | undefined> =>
 export const saveDiagram = async (name: string, draft: DiagramDraft): Promise<SavedDiagram> => {
   const now = Date.now();
   const record: SavedDiagram = {
+    autoLayout: draft.autoLayout,
     code: draft.code,
     config: draft.mermaid,
     createdAt: now,
     id: crypto.randomUUID(),
     name: name.trim() || 'Untitled diagram',
+    nodePositions: draft.nodePositions,
     updatedAt: now
   };
   await run('readwrite', (store) => store.add(record));
@@ -98,7 +115,9 @@ export const saveDiagram = async (name: string, draft: DiagramDraft): Promise<Sa
 /** Overwrites an existing diagram, preserving its creation time. */
 export const updateDiagram = async (
   id: string,
-  patch: Partial<Pick<SavedDiagram, 'code' | 'config' | 'favorite' | 'name'>>
+  patch: Partial<
+    Pick<SavedDiagram, 'autoLayout' | 'code' | 'config' | 'favorite' | 'name' | 'nodePositions'>
+  >
 ): Promise<SavedDiagram | undefined> => {
   const existing = await getDiagram(id);
   if (!existing) {
@@ -115,10 +134,7 @@ export const duplicateDiagram = async (id: string): Promise<SavedDiagram | undef
   if (!existing) {
     return undefined;
   }
-  return saveDiagram(`${existing.name} copy`, {
-    code: existing.code,
-    mermaid: existing.config
-  });
+  return saveDiagram(`${existing.name} copy`, draftOf(existing));
 };
 
 /** Toggles the star used to sort a diagram to the top of the dashboard. */

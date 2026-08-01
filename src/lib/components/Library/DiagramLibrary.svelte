@@ -9,6 +9,7 @@
   import { Input } from '$/components/ui/input';
   import {
     deleteDiagram,
+    draftOf,
     isStorageAvailable,
     listDiagrams,
     saveDiagram,
@@ -43,11 +44,16 @@
     }
   };
 
+  /** The layout fields travel with the diagram, or a manual arrangement is lost. */
+  const currentDraft = () => {
+    const { autoLayout, code, mermaid, nodePositions } = validatedState.current;
+    return { autoLayout, code, mermaid, nodePositions };
+  };
+
   const save = async () => {
     error = '';
-    const { code, mermaid } = validatedState.current;
     try {
-      const record = await saveDiagram(name, { code, mermaid });
+      const record = await saveDiagram(name, currentDraft());
       currentId = record.id;
       name = '';
       await refresh();
@@ -61,9 +67,9 @@
       return;
     }
     error = '';
-    const { code, mermaid } = validatedState.current;
+    const { autoLayout, code, mermaid, nodePositions } = currentDraft();
     try {
-      await updateDiagram(currentId, { code, config: mermaid });
+      await updateDiagram(currentId, { autoLayout, code, config: mermaid, nodePositions });
       await refresh();
     } catch (error_) {
       error = error_ instanceof Error ? error_.message : String(error_);
@@ -72,9 +78,10 @@
 
   const load = (diagram: SavedDiagram) => {
     currentId = diagram.id;
-    // Restores config as well as code, so a saved diagram reopens exactly as
-    // it was rather than picking up whatever theme is currently active.
-    updateCodeStore({ code: diagram.code, mermaid: diagram.config, updateDiagram: true });
+    // Restores config and layout as well as code, so a saved diagram reopens
+    // exactly as it was rather than picking up the current theme or falling
+    // back to Mermaid's layout over a manual arrangement.
+    updateCodeStore({ ...draftOf(diagram), updateDiagram: true });
     open = false;
   };
 
