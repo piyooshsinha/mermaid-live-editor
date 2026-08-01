@@ -1,6 +1,7 @@
 <script lang="ts">
   import { applyManualLayout, reflowEdges } from '$/canvas/applyLayout';
   import { attachCanvas } from '$/canvas/interaction.svelte';
+  import { buildSourceMap } from '$/canvas/sourceMap';
   import type { State, ValidatedState } from '$/types';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { render as renderDiagram } from '$/util/mermaid';
@@ -55,7 +56,9 @@
       isManualLayout,
       onMove: (nodePositions) => updateCodeStore({ nodePositions }),
       panZoomState,
-      reflow: (scene) => reflowEdges(graphDiv, scene)
+      reflow: (scene) => reflowEdges(graphDiv, scene),
+      // Rebuilt per render so selection always maps to the current text.
+      sourceMap: buildSourceMap(state.code)
     });
   };
 

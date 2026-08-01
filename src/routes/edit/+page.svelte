@@ -3,6 +3,7 @@
   import AIPanel from '$/components/AI/AIPanel.svelte';
   import AIRepairButton from '$/components/AI/AIRepairButton.svelte';
   import AutoLayoutToggle from '$/components/Canvas/AutoLayoutToggle.svelte';
+  import CanvasToolbar from '$/components/Canvas/CanvasToolbar.svelte';
   import Card from '$/components/Card/Card.svelte';
   import DiagramDocButton from '$/components/DiagramDocumentationButton.svelte';
   import Editor from '$/components/Editor.svelte';
@@ -157,5 +158,9 @@
     </div>
   </div>
 </div>
+
+<!-- Fixed-position, so it is anchored to the selection rather than clipped by
+     the diagram pane's overflow. -->
+<CanvasToolbar />
 
 <EditorChooserModal bind:open={showEditorChooser} />

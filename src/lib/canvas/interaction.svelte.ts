@@ -9,64 +9,70 @@
 
 import type { NodePosition } from '$/types';
 import type { PanZoomState } from '$/util/panZoom';
-import { nodeGroupFrom, nodeIdOf, readScene, type Scene, type SceneNode } from './scene';
+import {
+  edgeEndpointsOf,
+  nodeGroupFrom,
+  nodeIdOf,
+  readScene,
+  type Scene,
+  type SceneNode
+} from './scene';
+import type { SourceMap } from './sourceMap';
 
-export interface SelectionInfo {
+export interface CanvasSelection {
+  /** Node id, or the edge key (`L_A_B_0`). */
   id: string;
-  /** Screen-space box of the selected node, for anchoring the toolbar. */
+  kind: 'edge' | 'node';
+  /** 1-based source lines that declare this element, definition first. */
+  lines: number[];
+  /** Screen-space box, for anchoring the floating toolbar. */
   rect: DOMRect;
 }
 
-let selectedId = $state.raw<string | undefined>();
-let selectionRect = $state.raw<DOMRect | undefined>();
+let selection = $state.raw<CanvasSelection | undefined>();
 
 export const canvasSelection = {
-  get current(): SelectionInfo | undefined {
-    return selectedId && selectionRect ? { id: selectedId, rect: selectionRect } : undefined;
-  },
-  get id(): string | undefined {
-    return selectedId;
+  get current(): CanvasSelection | undefined {
+    return selection;
+  }
+};
+
+/** Lines the editor should highlight for the current selection. */
+export const selectedLines = {
+  get current(): number[] {
+    return selection?.lines ?? [];
   }
 };
 
 const OVERLAY_CLASS = 'mpp-overlay';
+const HIT_CLASS = 'mpp-hit';
 const PADDING = 6;
+const ACCENT = '#2563eb';
 
-/** Removes any overlay from a previous render. */
-const clearOverlay = (svg: SVGSVGElement): void => {
-  svg.querySelector(`.${OVERLAY_CLASS}`)?.remove();
+const viewportOf = (svg: SVGSVGElement): Element =>
+  svg.querySelector('g.svg-pan-zoom_viewport') ?? svg.firstElementChild ?? svg;
+
+const removeLayers = (svg: SVGSVGElement): void => {
+  for (const selector of [`.${OVERLAY_CLASS}`, `.${HIT_CLASS}`]) {
+    svg.querySelector(selector)?.remove();
+  }
 };
 
-const overlayLayer = (svg: SVGSVGElement): SVGGElement => {
-  const existing = svg.querySelector<SVGGElement>(`.${OVERLAY_CLASS}`);
+const makeLayer = (svg: SVGSVGElement, className: string, onTop: boolean): SVGGElement => {
+  const existing = svg.querySelector<SVGGElement>(`.${className}`);
   if (existing) {
     return existing;
   }
   const layer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  layer.setAttribute('class', OVERLAY_CLASS);
-  layer.style.pointerEvents = 'none';
-  // Inside the viewport group so it inherits the diagram's pan and zoom.
-  const viewport = svg.querySelector('g.svg-pan-zoom_viewport') ?? svg.firstElementChild;
-  viewport?.append(layer);
-  return layer;
-};
-
-const drawSelection = (svg: SVGSVGElement, node: SceneNode | undefined): void => {
-  const layer = overlayLayer(svg);
-  layer.replaceChildren();
-  if (!node) {
-    return;
+  layer.setAttribute('class', className);
+  const viewport = viewportOf(svg);
+  if (onTop) {
+    viewport.append(layer);
+  } else {
+    // Behind the diagram, so node hit-testing still wins on any overlap.
+    viewport.prepend(layer);
   }
-  const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  box.setAttribute('x', String(node.x - node.width / 2 - PADDING));
-  box.setAttribute('y', String(node.y - node.height / 2 - PADDING));
-  box.setAttribute('width', String(node.width + PADDING * 2));
-  box.setAttribute('height', String(node.height + PADDING * 2));
-  box.setAttribute('rx', '4');
-  box.setAttribute('fill', 'none');
-  box.setAttribute('stroke', '#2563eb');
-  box.setAttribute('stroke-width', '2');
-  layer.append(box);
+  return layer;
 };
 
 export interface CanvasOptions {
@@ -76,6 +82,7 @@ export interface CanvasOptions {
   panZoomState: PanZoomState;
   /** Redraws edges live while a node is being dragged. */
   reflow: (scene: Scene) => void;
+  sourceMap: SourceMap;
 }
 
 /**
@@ -83,21 +90,99 @@ export interface CanvasOptions {
  * `View.svelte` calls this after every render and disposes the previous one.
  */
 export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() => void) => {
-  clearOverlay(svg);
-  let scene = readScene(svg);
+  removeLayers(svg);
+  const scene = readScene(svg);
   // A plain record, not a Map: this is a static lookup index rebuilt on every
   // render, never reactive state.
   const byId: Record<string, SceneNode> = Object.fromEntries(
     scene.nodes.map((node) => [node.id, node])
   );
 
+  const overlay = makeLayer(svg, OVERLAY_CLASS, true);
+  overlay.style.pointerEvents = 'none';
+  const hitLayer = makeLayer(svg, HIT_CLASS, false);
+
+  /**
+   * Transparent fat copies of each edge, because a 2px stroke is effectively
+   * unclickable. These carry the pointer events; the real paths stay visual.
+   */
+  const hitPaths = scene.edges.map((edge) => {
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('fill', 'none');
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', '14');
+    hit.style.pointerEvents = 'stroke';
+    hit.dataset.edgeKey = edge.key;
+    hitLayer.append(hit);
+    return { edge, hit };
+  });
+
+  /** Copies geometry from the real edges; must re-run after any reflow. */
+  const syncHitPaths = () => {
+    for (const { edge, hit } of hitPaths) {
+      hit.setAttribute('d', edge.element.getAttribute('d') ?? '');
+    }
+  };
+  syncHitPaths();
+
   let dragging: { node: SceneNode; originX: number; originY: number } | undefined;
   let pointerOrigin: { x: number; y: number } | undefined;
 
-  const syncSelectionRect = () => {
-    const node = selectedId ? byId[selectedId] : undefined;
-    selectionRect = node?.element.getBoundingClientRect();
-    drawSelection(svg, node);
+  const drawSelection = () => {
+    overlay.replaceChildren();
+    if (!selection) {
+      return;
+    }
+    if (selection.kind === 'node') {
+      const node = byId[selection.id];
+      if (!node) {
+        return;
+      }
+      const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      box.setAttribute('x', String(node.x - node.width / 2 - PADDING));
+      box.setAttribute('y', String(node.y - node.height / 2 - PADDING));
+      box.setAttribute('width', String(node.width + PADDING * 2));
+      box.setAttribute('height', String(node.height + PADDING * 2));
+      box.setAttribute('rx', '4');
+      box.setAttribute('fill', 'none');
+      box.setAttribute('stroke', ACCENT);
+      box.setAttribute('stroke-width', '2');
+      overlay.append(box);
+      return;
+    }
+    // Edge: trace the path in the accent colour, matching the reference UI.
+    const edge = scene.edges.find((candidate) => candidate.key === selection?.id);
+    if (!edge) {
+      return;
+    }
+    const trace = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    trace.setAttribute('d', edge.element.getAttribute('d') ?? '');
+    trace.setAttribute('fill', 'none');
+    trace.setAttribute('stroke', ACCENT);
+    trace.setAttribute('stroke-width', '3');
+    trace.setAttribute('stroke-opacity', '0.65');
+    overlay.append(trace);
+  };
+
+  const rectOf = (element: SVGGraphicsElement): DOMRect => element.getBoundingClientRect();
+
+  const select = (next: CanvasSelection | undefined) => {
+    selection = next;
+    drawSelection();
+  };
+
+  const refreshSelection = () => {
+    if (!selection) {
+      return;
+    }
+    const element =
+      selection.kind === 'node'
+        ? byId[selection.id]?.element
+        : scene.edges.find((edge) => edge.key === selection?.id)?.element;
+    if (element) {
+      selection = { ...selection, rect: rectOf(element) };
+    }
+    drawSelection();
   };
 
   /**
@@ -109,9 +194,7 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
    * a 20px drag would move the node 20 units instead of 10.
    */
   const toDiagram = (clientX: number, clientY: number): { x: number; y: number } => {
-    const reference =
-      svg.querySelector<SVGGraphicsElement>('g.svg-pan-zoom_viewport') ??
-      (svg as SVGGraphicsElement);
+    const reference = viewportOf(svg) as SVGGraphicsElement;
     const matrix = reference.getScreenCTM();
     if (!matrix) {
       return { x: clientX, y: clientY };
@@ -122,36 +205,55 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
 
   const onPointerDown = (event: PointerEvent) => {
     const group = nodeGroupFrom(event.target);
-    if (!group) {
-      selectedId = undefined;
-      syncSelectionRect();
-      return;
-    }
-    const id = nodeIdOf(group);
-    const node = id ? byId[id] : undefined;
-    if (!node) {
+    if (group) {
+      const id = nodeIdOf(group);
+      const node = id ? byId[id] : undefined;
+      if (!node) {
+        return;
+      }
+      select({
+        id: node.id,
+        kind: 'node',
+        lines: options.sourceMap.nodes[node.id] ?? [],
+        rect: rectOf(node.element)
+      });
+
+      if (!options.isManualLayout()) {
+        return;
+      }
+      // Take over the gesture so svg-pan-zoom does not pan the canvas instead.
+      event.stopPropagation();
+      event.preventDefault();
+      options.panZoomState.suspendPan();
+      pointerOrigin = toDiagram(event.clientX, event.clientY);
+      dragging = { node, originX: node.x, originY: node.y };
+      try {
+        svg.setPointerCapture(event.pointerId);
+      } catch {
+        // Capture is an optimisation for pointers that leave the SVG; if it is
+        // refused the drag still works, so this must not abort the gesture and
+        // strand panning in its suspended state.
+      }
       return;
     }
 
-    selectedId = node.id;
-    syncSelectionRect();
-
-    if (!options.isManualLayout()) {
+    // Edge hit areas sit behind the diagram, so anything reaching here that is
+    // not a node may still be an edge.
+    const target = event.target;
+    const key = target instanceof SVGElement ? target.dataset.edgeKey : undefined;
+    const edge = key ? scene.edges.find((candidate) => candidate.key === key) : undefined;
+    if (edge) {
+      event.stopPropagation();
+      select({
+        id: edge.key,
+        kind: 'edge',
+        lines: options.sourceMap.edges[edge.key] ? [options.sourceMap.edges[edge.key]] : [],
+        rect: rectOf(edge.element)
+      });
       return;
     }
-    // Take over the gesture so svg-pan-zoom does not pan the canvas instead.
-    event.stopPropagation();
-    event.preventDefault();
-    options.panZoomState.suspendPan();
-    pointerOrigin = toDiagram(event.clientX, event.clientY);
-    dragging = { node, originX: node.x, originY: node.y };
-    try {
-      svg.setPointerCapture(event.pointerId);
-    } catch {
-      // Capture is an optimisation for pointers that leave the SVG; if it is
-      // refused the drag still works, so this must not abort the gesture and
-      // strand panning in its suspended state.
-    }
+
+    select(undefined);
   };
 
   const onPointerMove = (event: PointerEvent) => {
@@ -170,7 +272,8 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
       `translate(${dragging.node.x}, ${dragging.node.y})`
     );
     options.reflow(scene);
-    syncSelectionRect();
+    syncHitPaths();
+    refreshSelection();
   };
 
   const endDrag = (event: PointerEvent) => {
@@ -199,19 +302,20 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
 
-  syncSelectionRect();
+  // A re-render replaces every element, so any previous selection is stale.
+  select(undefined);
 
   return () => {
     svg.removeEventListener('pointerdown', onPointerDown);
     svg.removeEventListener('pointermove', onPointerMove);
     svg.removeEventListener('pointerup', endDrag);
     svg.removeEventListener('pointercancel', endDrag);
-    clearOverlay(svg);
-    scene = { edges: [], nodes: [] };
+    removeLayers(svg);
   };
 };
 
 export const clearSelection = (): void => {
-  selectedId = undefined;
-  selectionRect = undefined;
+  selection = undefined;
 };
+
+export { edgeEndpointsOf };

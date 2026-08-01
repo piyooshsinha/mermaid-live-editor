@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectedLines } from '$/canvas/interaction.svelte';
   import type { EditorProps } from '$/types';
   import { env } from '$/util/env';
   import { urls, validatedState } from '$/util/state.svelte';
@@ -31,6 +32,11 @@
   let showPopup = $state(false);
   let popupPosition = $state({ top: 0, lineNumber: 0 });
   let decorationsCollection: monaco.editor.IEditorDecorationsCollection | undefined;
+  /**
+   * Separate from `decorationsCollection` so canvas selection and the existing
+   * gutter decorations can never clobber one another.
+   */
+  let selectionDecorations: monaco.editor.IEditorDecorationsCollection | undefined;
   let input = $state('');
   let lastMouseLine = 0;
   const aiPromptManager = new AIPromptViewZoneManager();
@@ -131,6 +137,7 @@
     editor = monaco.editor.create(divElement, editorOptions);
     aiPromptManager.setEditor(editor);
     decorationsCollection = editor.createDecorationsCollection([]);
+    selectionDecorations = editor.createDecorationsCollection([]);
 
     editor.onMouseDown((e) => {
       const isGutter = e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
@@ -230,6 +237,45 @@
     // Display/clear errors
     monaco.editor.setModelMarkers(model, 'mermaid', errorMarkers);
   });
+
+  /**
+   * Highlights the source lines behind the current canvas selection, and
+   * scrolls the first of them into view so clicking a node off-screen in the
+   * code still shows you where it lives.
+   */
+  $effect(() => {
+    const lines = selectedLines.current;
+    if (!editor || !selectionDecorations) {
+      return;
+    }
+    const model = editor.getModel();
+    if (!model || model.id !== mermaidModel.id) {
+      selectionDecorations.clear();
+      return;
+    }
+    if (lines.length === 0) {
+      selectionDecorations.clear();
+      return;
+    }
+    const lineCount = model.getLineCount();
+    const valid = lines.filter((line) => line >= 1 && line <= lineCount);
+    selectionDecorations.set(
+      valid.map((line) => ({
+        options: {
+          className: 'canvas-selected-line',
+          isWholeLine: true,
+          overviewRuler: {
+            color: '#2563eb',
+            position: monaco.editor.OverviewRulerLane.Left
+          }
+        },
+        range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line))
+      }))
+    );
+    if (valid.length > 0) {
+      editor.revealLineInCenterIfOutsideViewport(valid[0]);
+    }
+  });
 </script>
 
 <div class="relative h-full grow overflow-hidden">
@@ -269,5 +315,17 @@
   :global(#editor.mermaid-dark .suggestion-icon) {
     background-color: #2e4d6b;
     background-image: url('/icons/use-chat-dark.svg');
+  }
+
+  /* Lines behind the current canvas selection. Tinted rather than boxed so it
+     reads as a highlight and not as a text selection. */
+  :global(.canvas-selected-line) {
+    background-color: rgb(37 99 235 / 12%);
+    border-left: 2px solid #2563eb;
+  }
+
+  :global(#editor.mermaid-dark .canvas-selected-line) {
+    background-color: rgb(96 165 250 / 18%);
+    border-left-color: #60a5fa;
   }
 </style>
