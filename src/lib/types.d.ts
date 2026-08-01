@@ -35,19 +35,6 @@ export interface State {
   pan?: { x: number; y: number };
   zoom?: number;
   loader?: LoaderConfig;
-  /**
-   * When false, node positions come from `nodePositions` instead of Mermaid's
-   * layout engine. Mermaid still lays out the first render; after that the
-   * stored coordinates win, which is what makes free dragging possible.
-   */
-  autoLayout?: boolean;
-  /** Manual node positions in diagram coordinates, keyed by Mermaid node id. */
-  nodePositions?: Record<string, NodePosition>;
-  /**
-   * Bend points for manually routed edges, keyed by edge key (`L_A_B_0`).
-   * An edge with no entry is drawn as a straight run between its nodes.
-   */
-  edgeWaypoints?: Record<string, NodePosition[]>;
 }
 
 export interface NodePosition {

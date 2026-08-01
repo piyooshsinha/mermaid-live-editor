@@ -2,6 +2,7 @@
   import { applyManualLayout, reflowEdges } from '$/canvas/applyLayout';
   import { connectNodes } from '$/canvas/edits';
   import { attachCanvas } from '$/canvas/interaction.svelte';
+  import { readLayout, writeLayout, type ManualLayout } from '$/canvas/layoutComment';
   import { buildSourceMap } from '$/canvas/sourceMap';
   import type { State, ValidatedState } from '$/types';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
@@ -27,7 +28,6 @@
   let view: HTMLDivElement | undefined = $state();
   let error = $state(false);
   let panZoom = true;
-  let autoLayout = true;
   let manualUpdate = true;
   let waitForFontAwesomeToLoad: FontAwesome['waitForFontAwesomeToLoad'] | undefined = $state();
 
@@ -49,21 +49,31 @@
     if (state.rough) {
       return;
     }
-    const isManualLayout = () => validatedState.current.autoLayout === false;
+    // Layout lives in the Mermaid source as a `%%` comment, so the file always
+    // describes what is on screen and stays portable to other renderers.
+    const stored = readLayout(state.code);
+    const isManualLayout = () => readLayout(validatedState.current.code) !== undefined;
     // A working copy the interaction layer mutates during a drag; it is
-    // committed to state on pointer-up.
-    const waypoints = structuredClone(validatedState.current.edgeWaypoints ?? {});
-    if (isManualLayout()) {
-      applyManualLayout(graphDiv, validatedState.current.nodePositions ?? {}, waypoints);
+    // written back into the source on pointer-up.
+    const waypoints = structuredClone(stored?.edgeWaypoints ?? {});
+    if (stored) {
+      applyManualLayout(graphDiv, stored.nodePositions, waypoints);
     }
+
+    /** Rewrites the layout comment, preserving whichever half is unchanged. */
+    const commitLayout = (patch: Partial<ManualLayout>) => {
+      const code = validatedState.current.code;
+      const current = readLayout(code) ?? { edgeWaypoints: {}, nodePositions: {} };
+      updateCode(writeLayout(code, { ...current, ...patch }), { updateDiagram: true });
+    };
     detachCanvas = attachCanvas(graphDiv, {
       isManualLayout,
       onConnect: (fromId, toId) =>
         updateCode(connectNodes(validatedState.current.code, fromId, toId), {
           updateDiagram: true
         }),
-      onMove: (nodePositions) => updateCodeStore({ nodePositions }),
-      onReroute: (edgeWaypoints) => updateCodeStore({ edgeWaypoints }),
+      onMove: (nodePositions) => commitLayout({ nodePositions }),
+      onReroute: (edgeWaypoints) => commitLayout({ edgeWaypoints }),
       panZoomState,
       reflow: (scene, routes) => reflowEdges(graphDiv, scene, routes),
       // Rebuilt per render so selection always maps to the current text.
@@ -93,10 +103,6 @@
         manualUpdate = true;
         // Do not render if there is no change in Code/Config/PanZoom
         if (
-          // autoLayout is part of the guard because turning it back on must
-          // re-render to discard the manual transforms written onto the SVG;
-          // nothing else about the diagram changes at that moment.
-          autoLayout === (state.autoLayout !== false) &&
           code === state.code &&
           config === state.mermaid &&
           rough === state.rough &&
@@ -111,7 +117,6 @@
 
         code = state.code;
         config = state.mermaid;
-        autoLayout = state.autoLayout !== false;
         rough = state.rough;
         panZoom = state.panZoom ?? true;
 

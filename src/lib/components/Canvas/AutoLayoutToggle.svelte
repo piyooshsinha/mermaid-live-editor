@@ -2,30 +2,38 @@
   /**
    * Switches between Mermaid-owned layout and manually positioned nodes.
    *
+   * The manual arrangement is stored as a `%%` comment in the diagram source,
+   * so turning this off is an edit to the text like any other: it lands in
+   * undo history, travels with the file, and other Mermaid renderers ignore it.
+   *
    * Turning it off snapshots wherever Mermaid currently placed the nodes, so
-   * the diagram does not jump: the user keeps the layout they were looking at
-   * and starts dragging from there. Turning it back on discards the manual
-   * coordinates and hands layout back to Mermaid.
+   * the diagram does not jump. Turning it on removes the comment and hands
+   * layout back to Mermaid.
    */
   import { captureLayout } from '$/canvas/applyLayout';
   import { clearSelection } from '$/canvas/interaction.svelte';
+  import { readLayout, writeLayout } from '$/canvas/layoutComment';
   import { Switch } from '$/components/ui/switch';
-  import { updateCodeStore, validatedState } from '$/util/state.svelte';
+  import { updateCode, validatedState } from '$/util/state.svelte';
   import LayoutDirectionMenu from './LayoutDirectionMenu.svelte';
 
-  const isAuto = $derived(validatedState.current.autoLayout !== false);
+  const isAuto = $derived(readLayout(validatedState.current.code) === undefined);
 
   const onChange = (next: boolean) => {
+    const code = validatedState.current.code;
     if (next) {
       clearSelection();
-      updateCodeStore({ autoLayout: true, nodePositions: undefined });
+      updateCode(writeLayout(code, undefined), { updateDiagram: true });
       return;
     }
     const svg = document.querySelector<SVGSVGElement>('#container svg');
-    updateCodeStore({
-      autoLayout: false,
-      nodePositions: svg ? captureLayout(svg) : {}
-    });
+    updateCode(
+      writeLayout(code, {
+        edgeWaypoints: {},
+        nodePositions: svg ? captureLayout(svg) : {}
+      }),
+      { updateDiagram: true }
+    );
   };
 </script>
 

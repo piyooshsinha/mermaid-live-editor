@@ -44,10 +44,10 @@
     }
   };
 
-  /** The layout fields travel with the diagram, or a manual arrangement is lost. */
+  /** Manual layout rides along inside `code` as a comment, so this is all we need. */
   const currentDraft = () => {
-    const { autoLayout, code, edgeWaypoints, mermaid, nodePositions } = validatedState.current;
-    return { autoLayout, code, edgeWaypoints, mermaid, nodePositions };
+    const { code, mermaid } = validatedState.current;
+    return { code, mermaid };
   };
 
   const save = async () => {
@@ -67,15 +67,9 @@
       return;
     }
     error = '';
-    const { autoLayout, code, edgeWaypoints, mermaid, nodePositions } = currentDraft();
+    const { code, mermaid } = currentDraft();
     try {
-      await updateDiagram(currentId, {
-        autoLayout,
-        code,
-        config: mermaid,
-        edgeWaypoints,
-        nodePositions
-      });
+      await updateDiagram(currentId, { code, config: mermaid });
       await refresh();
     } catch (error_) {
       error = error_ instanceof Error ? error_.message : String(error_);
