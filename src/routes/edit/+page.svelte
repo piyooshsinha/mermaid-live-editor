@@ -1,7 +1,6 @@
 <script lang="ts">
   import Actions from '$/components/Actions.svelte';
   import AIPanel from '$/components/AI/AIPanel.svelte';
-  import AIRepairButton from '$/components/AI/AIRepairButton.svelte';
   import AutoLayoutToggle from '$/components/Canvas/AutoLayoutToggle.svelte';
   import CanvasToolbar from '$/components/Canvas/CanvasToolbar.svelte';
   import Card from '$/components/Card/Card.svelte';
@@ -142,7 +141,6 @@
         <Resizable.Handle class="mr-1 hidden opacity-0 sm:block" />
         <Resizable.Pane minSize={15} class="relative flex h-full flex-1 flex-col overflow-hidden">
           <View {panZoomState} shouldShowGrid={validatedState.current.grid} />
-          <div class="absolute top-0 left-5 z-10"><AIRepairButton /></div>
           <div class="absolute bottom-0 left-1/2 z-10 -translate-x-1/2"><AutoLayoutToggle /></div>
           <div class="absolute top-0 right-0"><PanZoomToolbar {panZoomState} /></div>
           <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
