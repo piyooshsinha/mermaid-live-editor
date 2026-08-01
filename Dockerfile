@@ -22,6 +22,9 @@ ARG MERMAID_IS_ENABLED_MERMAID_CHART_LINKS
 ARG MERMAID_PRIVACY_POLICY_URL
 ARG MERMAID_HIDE_PRIVACY_POLICY
 ARG MERMAID_BASE_PATH
+# Empty (the default) keeps AI as bring-your-own-key; set this only when a
+# hosted inference proxy exists to back the subscription tier.
+ARG MERMAID_AI_PROXY_URL
 
 COPY . ./
 

@@ -10,6 +10,9 @@
   import { TID } from '$/constants';
   import { getDomain } from '$/util/util';
   import { browser } from '$app/environment';
+  import { currentDiagramType, exporters, runExport } from '$/export';
+  // Aliased: this file already has a local `Exporter` for canvas image export.
+  import type { Exporter as FormatExporter } from '$/export';
   import { waitForRender } from '$lib/util/autoSync';
   import { inputState, updateCodeStore, urls, validatedState } from '$lib/util/state.svelte';
   import { logEvent } from '$lib/util/stats';
@@ -248,6 +251,27 @@ ${svgString}`);
   let imageSize = $state(1080);
 
   const isNetlify = browser && window.location.host.includes('netlify');
+
+  // Interoperability exports (PDF, draw.io, Excalidraw, PlantUML). Structural
+  // formats only support some diagram types, so each button reports its own
+  // reason rather than silently producing an unusable file.
+  let exportError = $state('');
+  let exportingId = $state('');
+
+  const diagramType = $derived(currentDiagramType());
+
+  const onExport = async (exporter: FormatExporter) => {
+    exportError = '';
+    exportingId = exporter.id;
+    try {
+      await runExport(exporter);
+      logEvent('download', { type: exporter.id });
+    } catch (error) {
+      exportError = error instanceof Error ? error.message : String(error);
+    } finally {
+      exportingId = '';
+    }
+  };
 </script>
 
 {#snippet dualActionButton(text: string, download: (event: Event) => unknown, url?: string)}
@@ -297,6 +321,30 @@ ${svgString}`);
           </Button>
         </a>
       </ExternalLinkWrapper>
+    </div>
+    <Separator />
+    <div class="flex flex-col gap-2">
+      <span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+        Export to other tools
+      </span>
+      <div class="flex flex-wrap gap-2">
+        {#each exporters as exporter (exporter.id)}
+          {@const supported = exporter.supports(diagramType)}
+          <Button
+            class="flex-grow"
+            variant="outline"
+            disabled={supported !== true || exportingId !== ''}
+            title={supported === true ? exporter.description : supported}
+            onclick={() => onExport(exporter)}
+            data-testid="export-{exporter.id}">
+            <DownloadIcon />
+            {exportingId === exporter.id ? 'Exporting…' : exporter.label}
+          </Button>
+        {/each}
+      </div>
+      {#if exportError}
+        <p class="text-xs text-destructive" data-testid="export-error">{exportError}</p>
+      {/if}
     </div>
     <Separator />
     {#if isClipboardAvailable()}

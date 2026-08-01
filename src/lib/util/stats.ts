@@ -89,6 +89,9 @@ const minutesToMilliSeconds = (minutes: number): number => {
 const noDelay = 0;
 const defaultDelay = minutesToMilliSeconds(1);
 const delaysPerEvent = {
+  aiAccept: noDelay,
+  aiPrompt: noDelay,
+  aiRepair: noDelay,
   bannerClick: noDelay,
   chooseEditor: noDelay,
   copyClipboard: defaultDelay,
@@ -97,6 +100,7 @@ const delaysPerEvent = {
   history: defaultDelay,
   loadGist: defaultDelay,
   loadSampleDiagram: defaultDelay,
+  loadTemplate: defaultDelay,
   mermaidChartClick: noDelay,
   migration: defaultDelay,
   mobileViewToggle: defaultDelay,

@@ -4,7 +4,7 @@
   import { toggleDarkTheme } from '$/util/state.svelte';
   import { initHandler } from '$/util/util';
   import { base } from '$app/paths';
-  import { mode, ModeWatcher } from 'mode-watcher';
+  import { mode, ModeWatcher, setMode } from 'mode-watcher';
   import { onMount, type Snippet } from 'svelte';
   import '../app.css';
 
@@ -13,6 +13,20 @@
   }
 
   let { children }: Props = $props();
+
+  // Light is the default surface: diagrams are authored for documents and
+  // slides, which are light, so the canvas should match what gets exported.
+  // ModeWatcher's own `defaultMode` is applied by its pre-hydration script but
+  // then overwritten when its store initialises, so the choice is made here
+  // instead. A one-time marker keeps this from overriding a real user choice:
+  // once the toggle has been used, that preference always wins.
+  const THEME_DEFAULT_KEY = 'mermaidpp-theme-default-applied';
+  onMount(() => {
+    if (!localStorage.getItem(THEME_DEFAULT_KEY)) {
+      localStorage.setItem(THEME_DEFAULT_KEY, '1');
+      setMode('light');
+    }
+  });
 
   // This can be removed once https://github.com/sveltejs/kit/issues/1612 is fixed.
   // Then move it into src and vite will bundle it automatically.
@@ -38,7 +52,11 @@
   });
 </script>
 
-<ModeWatcher />
+<!-- Light is the default surface: diagrams are authored for documents and
+     slides, which are light, so the canvas should match what gets exported.
+     `track={false}` stops the OS dark preference from overriding that default;
+     the in-app theme toggle still works and still persists the user's choice. -->
+<ModeWatcher defaultMode="light" track={false} />
 <Toaster />
 
 <main class="h-dvh">
