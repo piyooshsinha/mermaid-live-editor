@@ -3,7 +3,11 @@
   "version": "2.0.67",
   "type": "module",
   "license": "MIT",
+  "bin": {
+    "mermaid-lint": "bin/mermaid-lint.ts"
+  },
   "scripts": {
+    "lint:diagrams": "node bin/mermaid-lint.ts",
     "dev": "vite dev",
     "dev:force": "MERMAID_LOCAL=true pnpm dev --force",
     "dev:test": "pnpm dev",

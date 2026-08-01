@@ -22,7 +22,13 @@ jobs:
           node-version-file: '.node-version'
           cache: pnpm
 
+      # Pages setup is a deployment concern, and it fails outright on any fork
+      # that has not enabled Pages — which took the build step down with it, so
+      # pull requests were never actually compiling the app. Skipping it on
+      # pull requests lets them validate the build, which is the point of
+      # running this job on a PR at all.
       - name: Setup Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
         with:
           static_site_generator: sveltekit
@@ -33,14 +39,20 @@ jobs:
           MERMAID_ANALYTICS_URL: 'https://p.mermaid.live'
           MERMAID_RENDERER_URL: 'https://mermaid.ink'
           MERMAID_KROKI_RENDERER_URL: 'https://kroki.io'
-          MERMAID_IS_ENABLED_MERMAID_CHART_LINKS: 'true'
+          # Off, matching .env: diagrams save to the local library rather than
+          # being handed to mermaid.ai. Left as 'true' this would have re-enabled
+          # every upsell in the deployed build regardless of the checked-in
+          # default, since the workflow env wins.
+          MERMAID_IS_ENABLED_MERMAID_CHART_LINKS: 'false'
         run: |
           export DEPLOY=true
           [ "$GITHUB_EVENT_NAME" != "pull_request" ] && rm -rf docs/_app/
           pnpm install
           pnpm build
 
+      # Nothing deploys from a pull request, so there is no artifact to publish.
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs

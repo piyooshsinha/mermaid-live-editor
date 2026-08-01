@@ -37,6 +37,11 @@ export interface State {
   loader?: LoaderConfig;
 }
 
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
 export interface ValidatedState extends State {
   editorMode: EditorMode;
   diagramType?: string;

@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { applyManualLayout, reflowEdges } from '$/canvas/applyLayout';
+  import { connectNodes } from '$/canvas/edits';
+  import { attachCanvas } from '$/canvas/interaction.svelte';
+  import { readLayout, writeLayout, type ManualLayout } from '$/canvas/layoutComment';
+  import { buildSourceMap } from '$/canvas/sourceMap';
   import type { State, ValidatedState } from '$/types';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { render as renderDiagram } from '$/util/mermaid';
   import { PanZoomState } from '$/util/panZoom';
-  import { updateCodeStore, validatedState } from '$/util/state.svelte';
+  import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
   import uniqueID from 'lodash-es/uniqueId';
@@ -31,6 +36,50 @@
     panZoomState.onPanZoomChange = (pan, zoom) => {
       updateCodeStore({ pan, zoom });
     };
+  };
+
+  // Teardown for the interaction layer attached to the previous render.
+  let detachCanvas: (() => void) | undefined;
+
+  const setupCanvas = (state: ValidatedState, graphDiv: SVGSVGElement) => {
+    detachCanvas?.();
+    detachCanvas = undefined;
+    // Rough mode redraws the SVG as sketch strokes, discarding the node
+    // structure the interaction layer depends on.
+    if (state.rough) {
+      return;
+    }
+    // Layout lives in the Mermaid source as a `%%` comment, so the file always
+    // describes what is on screen and stays portable to other renderers.
+    const stored = readLayout(state.code);
+    const isManualLayout = () => readLayout(validatedState.current.code) !== undefined;
+    // A working copy the interaction layer mutates during a drag; it is
+    // written back into the source on pointer-up.
+    const waypoints = structuredClone(stored?.edgeWaypoints ?? {});
+    if (stored) {
+      applyManualLayout(graphDiv, stored.nodePositions, waypoints);
+    }
+
+    /** Rewrites the layout comment, preserving whichever half is unchanged. */
+    const commitLayout = (patch: Partial<ManualLayout>) => {
+      const code = validatedState.current.code;
+      const current = readLayout(code) ?? { edgeWaypoints: {}, nodePositions: {} };
+      updateCode(writeLayout(code, { ...current, ...patch }), { updateDiagram: true });
+    };
+    detachCanvas = attachCanvas(graphDiv, {
+      isManualLayout,
+      onConnect: (fromId, toId) =>
+        updateCode(connectNodes(validatedState.current.code, fromId, toId), {
+          updateDiagram: true
+        }),
+      onMove: (nodePositions) => commitLayout({ nodePositions }),
+      onReroute: (edgeWaypoints) => commitLayout({ edgeWaypoints }),
+      panZoomState,
+      reflow: (scene, routes) => reflowEdges(graphDiv, scene, routes),
+      // Rebuilt per render so selection always maps to the current text.
+      sourceMap: buildSourceMap(state.code),
+      waypoints
+    });
   };
 
   const handlePanZoom = (state: State, graphDiv: SVGSVGElement) => {
@@ -118,6 +167,9 @@
           if (state.panZoom) {
             handlePanZoom(state, graphDiv);
           }
+          // Manual positions and the interaction layer are re-applied after
+          // every render, since Mermaid lays the graph out again each time.
+          setupCanvas(state, graphDiv);
         }
         if (view?.parentElement && scroll) {
           view.parentElement.scrollTop = scroll;

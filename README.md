@@ -113,6 +113,31 @@ pnpm dev -- --open
 
 This app is created with Svelte Kit.
 
+## Validating diagrams in CI
+
+`mermaid-lint` checks that every diagram in a repository still parses, and
+exits non-zero when one does not. It reads `.mmd` / `.mermaid` files and
+` ```mermaid ` blocks inside Markdown, so a broken diagram in a README is
+caught in review rather than after it has been merged and rendered as an error
+box.
+
+```sh
+pnpm lint:diagrams "**/*.md" "**/*.mmd"
+```
+
+```
+README.md:14: Parse error on line 14:
+✖ 1 problem in 2 diagrams in 1 file
+```
+
+Errors inside a Markdown fence are reported against the line in the Markdown
+file, not the line within the snippet. Use `--json` for machine-readable
+output.
+
+Validation does not need a browser: Mermaid's parser runs under jsdom, so the
+check stays fast enough to sit on every pull request. See
+`.github/workflows/validate-diagrams.yml` for a ready-made job.
+
 ## Release
 
 When a PR is created targeting master, it will be built and deployed by Netlify.
