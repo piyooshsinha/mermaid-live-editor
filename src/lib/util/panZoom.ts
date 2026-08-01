@@ -140,6 +140,20 @@ export class PanZoomState {
     }
   }
 
+  /**
+   * Suspends canvas panning for the duration of a node drag, so dragging a node
+   * moves the node instead of the whole diagram. Pairs with `resumePan`.
+   */
+  public suspendPan() {
+    this.pzoom?.disablePan();
+  }
+
+  public resumePan() {
+    if (this.isPanEnabled) {
+      this.pzoom?.enablePan();
+    }
+  }
+
   public zoomIn() {
     this.pzoom?.zoomIn();
   }

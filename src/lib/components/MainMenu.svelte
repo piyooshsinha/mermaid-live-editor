@@ -6,6 +6,7 @@
   import { urls } from '$/util/state.svelte';
   import { logMermaidChartClick } from '$/util/stats';
   import { cn } from '$/utils';
+  import { resolve } from '$app/paths';
   import { mode, setMode } from 'mode-watcher';
   import type { Component, Snippet } from 'svelte';
   import MermaidTailIcon from '~icons/custom/mermaid-tail';
@@ -13,6 +14,7 @@
   import BookIcon from '~icons/material-symbols/book-2-outline-rounded';
   import DuplicateIcon from '~icons/material-symbols/content-copy-outline-rounded';
   import ContrastIcon from '~icons/material-symbols/contrast';
+  import DashboardIcon from '~icons/material-symbols/grid-view-outline-rounded';
   import PluginIcon from '~icons/material-symbols/electrical-services-rounded';
   import MenuIcon from '~icons/material-symbols/menu-rounded';
   import CommunityIcon from '~icons/material-symbols/person-play-outline-rounded';
@@ -34,6 +36,13 @@
   const menuItems: MenuItem[] = $derived([
     { label: 'New', icon: AddIcon, href: urls.current.new, renderer: menuItem },
     { label: 'Duplicate', icon: DuplicateIcon, href: window.location.href, renderer: menuItem },
+    {
+      href: resolve('/dashboard', {}),
+      icon: DashboardIcon,
+      isSectionEnd: true,
+      label: 'Dashboard',
+      renderer: menuItem
+    },
     {
       href: urls.current.mermaidChart({ medium: 'main_menu' }).playground,
       icon: PlaygroundIcon,

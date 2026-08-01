@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { applyManualLayout, reflowEdges } from '$/canvas/applyLayout';
+  import { attachCanvas } from '$/canvas/interaction.svelte';
   import type { State, ValidatedState } from '$/types';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { render as renderDiagram } from '$/util/mermaid';
@@ -31,6 +33,29 @@
     panZoomState.onPanZoomChange = (pan, zoom) => {
       updateCodeStore({ pan, zoom });
     };
+  };
+
+  // Teardown for the interaction layer attached to the previous render.
+  let detachCanvas: (() => void) | undefined;
+
+  const setupCanvas = (state: ValidatedState, graphDiv: SVGSVGElement) => {
+    detachCanvas?.();
+    detachCanvas = undefined;
+    // Rough mode redraws the SVG as sketch strokes, discarding the node
+    // structure the interaction layer depends on.
+    if (state.rough) {
+      return;
+    }
+    const isManualLayout = () => validatedState.current.autoLayout === false;
+    if (isManualLayout()) {
+      applyManualLayout(graphDiv, validatedState.current.nodePositions ?? {});
+    }
+    detachCanvas = attachCanvas(graphDiv, {
+      isManualLayout,
+      onMove: (nodePositions) => updateCodeStore({ nodePositions }),
+      panZoomState,
+      reflow: (scene) => reflowEdges(graphDiv, scene)
+    });
   };
 
   const handlePanZoom = (state: State, graphDiv: SVGSVGElement) => {
@@ -118,6 +143,9 @@
           if (state.panZoom) {
             handlePanZoom(state, graphDiv);
           }
+          // Manual positions and the interaction layer are re-applied after
+          // every render, since Mermaid lays the graph out again each time.
+          setupCanvas(state, graphDiv);
         }
         if (view?.parentElement && scroll) {
           view.parentElement.scrollTop = scroll;
