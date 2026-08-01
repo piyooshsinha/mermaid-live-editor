@@ -1,5 +1,7 @@
 <script lang="ts">
   import Actions from '$/components/Actions.svelte';
+  import AIPanel from '$/components/AI/AIPanel.svelte';
+  import AIRepairButton from '$/components/AI/AIRepairButton.svelte';
   import Card from '$/components/Card/Card.svelte';
   import DiagramDocButton from '$/components/DiagramDocumentationButton.svelte';
   import Editor from '$/components/Editor.svelte';
@@ -14,6 +16,7 @@
   import Preset from '$/components/Preset.svelte';
   import Share from '$/components/Share.svelte';
   import SyncRoughToolbar from '$/components/SyncRoughToolbar.svelte';
+  import Templates from '$/components/Templates.svelte';
   import { Button } from '$/components/ui/button';
   import * as Resizable from '$/components/ui/resizable';
   import { Switch } from '$/components/ui/switch';
@@ -119,21 +122,28 @@
         autoSaveId="liveEditor"
         class="gap-4 p-2 pt-0 sm:gap-0 sm:p-6 sm:pt-0">
         <Resizable.Pane bind:this={editorPane} defaultSize={30} minSize={15}>
-          <div class="flex h-full flex-col gap-4 sm:gap-6">
-            <Card
-              onselect={tabSelectHandler}
-              isOpen
-              tabs={editorTabs}
-              activeTabID={validatedState.current.editorMode}
-              isClosable={false}>
-              {#snippet actions()}
-                <DiagramDocButton />
-              {/snippet}
-              <Editor {isMobile} />
-            </Card>
+          <!-- Scrolls as a column so the added panels can never squeeze the
+               editor down to its header. -->
+          <div class="flex h-full flex-col gap-4 overflow-x-hidden overflow-y-auto sm:gap-6">
+            <div class="flex min-h-64 flex-1 shrink-0 flex-col">
+              <Card
+                onselect={tabSelectHandler}
+                isOpen
+                tabs={editorTabs}
+                activeTabID={validatedState.current.editorMode}
+                isClosable={false}>
+                {#snippet actions()}
+                  <DiagramDocButton />
+                {/snippet}
+                <Editor {isMobile} />
+              </Card>
+            </div>
 
-            <div class="group flex flex-wrap justify-between gap-4 sm:gap-6">
+            <div class="shrink-0"><AIPanel /></div>
+
+            <div class="group flex shrink-0 flex-wrap justify-between gap-4 sm:gap-6">
               <Preset />
+              <Templates />
               <Actions />
             </div>
           </div>
@@ -142,6 +152,7 @@
         <Resizable.Pane minSize={15} class="relative flex h-full flex-1 flex-col overflow-hidden">
           <View {panZoomState} shouldShowGrid={validatedState.current.grid} />
           <div class="absolute top-0 left-5 hidden md:block"><EnhancedEditsButton /></div>
+          <div class="absolute top-12 left-5 z-10"><AIRepairButton /></div>
           <div class="absolute top-0 right-0"><PanZoomToolbar {panZoomState} /></div>
           <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
           <div class="absolute bottom-0 left-0 sm:left-5"><SyncRoughToolbar /></div>
