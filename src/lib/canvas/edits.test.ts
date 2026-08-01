@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { deleteSelection, duplicateNode, readDirection, setDirection, setNodeStyle } from './edits';
+import {
+  connectNodes,
+  deleteSelection,
+  duplicateNode,
+  readDirection,
+  setDirection,
+  setNodeStyle
+} from './edits';
 import type { CanvasSelection } from './interaction.svelte';
 import { buildSourceMap } from './sourceMap';
 
@@ -75,6 +82,28 @@ describe('deleteSelection', () => {
   it('returns the code unchanged when nothing maps to the selection', () => {
     const map = buildSourceMap(CODE);
     expect(deleteSelection(CODE, map, selection('edge', 'L_X_Y_0'))).toBe(CODE);
+  });
+});
+
+describe('connectNodes', () => {
+  it('appends an edge between two nodes', () => {
+    const next = connectNodes(CODE, 'C', 'A');
+    expect(next.trim().split('\n').pop()).toBe('    C --> A');
+  });
+
+  it('leaves the existing body untouched', () => {
+    const next = connectNodes(CODE, 'C', 'A');
+    expect(next).toContain('A[Start] --> B{Choice}');
+    expect(next).toContain('B -->|yes| C[Done]');
+  });
+
+  it('refuses to connect a node to itself', () => {
+    expect(connectNodes(CODE, 'A', 'A')).toBe(CODE);
+  });
+
+  it('matches the indentation already used in the diagram', () => {
+    const twoSpace = 'flowchart TD\n  A --> B';
+    expect(connectNodes(twoSpace, 'B', 'A')).toContain('\n  B --> A');
   });
 });
 

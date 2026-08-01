@@ -46,6 +46,7 @@ export const selectedLines = {
 };
 
 const OVERLAY_CLASS = 'mpp-overlay';
+const HOVER_CLASS = 'mpp-hover';
 const HIT_CLASS = 'mpp-hit';
 const PADDING = 6;
 const ACCENT = '#2563eb';
@@ -54,7 +55,7 @@ const viewportOf = (svg: SVGSVGElement): Element =>
   svg.querySelector('g.svg-pan-zoom_viewport') ?? svg.firstElementChild ?? svg;
 
 const removeLayers = (svg: SVGSVGElement): void => {
-  for (const selector of [`.${OVERLAY_CLASS}`, `.${HIT_CLASS}`]) {
+  for (const selector of [`.${OVERLAY_CLASS}`, `.${HOVER_CLASS}`, `.${HIT_CLASS}`]) {
     svg.querySelector(selector)?.remove();
   }
 };
@@ -79,6 +80,8 @@ const makeLayer = (svg: SVGSVGElement, className: string, onTop: boolean): SVGGE
 export interface CanvasOptions {
   /** Whether manual layout is on; dragging is disabled when it is not. */
   isManualLayout: () => boolean;
+  /** Called when the user drags from a node's + handle onto another node. */
+  onConnect: (fromId: string, toId: string) => void;
   onMove: (positions: Record<string, NodePosition>) => void;
   /** Commits a reshaped edge route. */
   onReroute: (waypoints: Record<string, NodePosition[]>) => void;
@@ -103,6 +106,10 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     scene.nodes.map((node) => [node.id, node])
   );
 
+  // Hover sits under selection so a selected element never loses its outline
+  // to a hover indicator drawn on top of it.
+  const hoverLayer = makeLayer(svg, HOVER_CLASS, true);
+  hoverLayer.style.pointerEvents = 'none';
   const overlay = makeLayer(svg, OVERLAY_CLASS, true);
   overlay.style.pointerEvents = 'none';
   const hitLayer = makeLayer(svg, HIT_CLASS, false);
@@ -132,7 +139,67 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
 
   let dragging: { node: SceneNode; originX: number; originY: number } | undefined;
   let bending: { index: number; key: string } | undefined;
+  let connecting: { from: SceneNode } | undefined;
   let pointerOrigin: { x: number; y: number } | undefined;
+  /** `node:A` or `edge:L_A_B_0`; tracked so hover only repaints on change. */
+  let hovered: string | undefined;
+
+  /**
+   * Draws the hover affordance: a soft halo on a node, or a thickened trace on
+   * an edge. Deliberately weaker than the selection styling so the two read as
+   * different states rather than competing for attention.
+   */
+  const drawHover = (target: { id: string; kind: 'edge' | 'node' } | undefined) => {
+    hoverLayer.replaceChildren();
+    // The selected element already has stronger styling; doubling up muddies it.
+    if (!target || (selection?.kind === target.kind && selection.id === target.id)) {
+      return;
+    }
+    if (target.kind === 'node') {
+      const node = byId[target.id];
+      if (!node) {
+        return;
+      }
+      const halo = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      halo.setAttribute('x', String(node.x - node.width / 2 - PADDING));
+      halo.setAttribute('y', String(node.y - node.height / 2 - PADDING));
+      halo.setAttribute('width', String(node.width + PADDING * 2));
+      halo.setAttribute('height', String(node.height + PADDING * 2));
+      halo.setAttribute('rx', '4');
+      halo.setAttribute('fill', ACCENT);
+      halo.setAttribute('fill-opacity', '0.08');
+      halo.setAttribute('stroke', ACCENT);
+      halo.setAttribute('stroke-opacity', '0.45');
+      halo.setAttribute('stroke-width', '1.5');
+      hoverLayer.append(halo);
+      return;
+    }
+    const edge = scene.edges.find((candidate) => candidate.key === target.id);
+    if (!edge) {
+      return;
+    }
+    const trace = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    trace.setAttribute('d', edge.element.getAttribute('d') ?? '');
+    trace.setAttribute('fill', 'none');
+    trace.setAttribute('stroke', ACCENT);
+    trace.setAttribute('stroke-width', '6');
+    trace.setAttribute('stroke-opacity', '0.22');
+    trace.setAttribute('stroke-linecap', 'round');
+    hoverLayer.append(trace);
+  };
+
+  /** What the pointer is over, if anything the canvas cares about. */
+  const targetAt = (
+    eventTarget: EventTarget | null
+  ): { id: string; kind: 'edge' | 'node' } | undefined => {
+    const group = nodeGroupFrom(eventTarget);
+    if (group) {
+      const id = nodeIdOf(group);
+      return id && byId[id] ? { id, kind: 'node' } : undefined;
+    }
+    const key = eventTarget instanceof SVGElement ? eventTarget.dataset.edgeKey : undefined;
+    return key ? { id: key, kind: 'edge' } : undefined;
+  };
 
   const drawSelection = () => {
     overlay.replaceChildren();
@@ -154,6 +221,7 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
       box.setAttribute('stroke', ACCENT);
       box.setAttribute('stroke-width', '2');
       overlay.append(box);
+      drawConnectHandle(node);
       return;
     }
     // Edge: trace the path in the accent colour, matching the reference UI.
@@ -172,6 +240,43 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     if (options.isManualLayout()) {
       drawEdgeHandles(edge.key);
     }
+  };
+
+  /**
+   * The `+` affordance on a selected node. Dragging from it to another node
+   * creates an edge; this works regardless of layout mode, since adding an
+   * edge is a source change rather than a positioning one.
+   */
+  const drawConnectHandle = (node: SceneNode) => {
+    const cx = node.x + node.width / 2 + PADDING + 8;
+    const cy = node.y;
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.dataset.connectHandle = 'true';
+    group.style.pointerEvents = 'all';
+    group.style.cursor = 'crosshair';
+
+    const disc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    disc.setAttribute('cx', String(cx));
+    disc.setAttribute('cy', String(cy));
+    disc.setAttribute('r', '9');
+    disc.setAttribute('fill', ACCENT);
+    group.append(disc);
+
+    for (const [x1, y1, x2, y2] of [
+      [cx - 4, cy, cx + 4, cy],
+      [cx, cy - 4, cx, cy + 4]
+    ]) {
+      const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      tick.setAttribute('x1', String(x1));
+      tick.setAttribute('y1', String(y1));
+      tick.setAttribute('x2', String(x2));
+      tick.setAttribute('y2', String(y2));
+      tick.setAttribute('stroke', '#ffffff');
+      tick.setAttribute('stroke-width', '2');
+      tick.setAttribute('stroke-linecap', 'round');
+      group.append(tick);
+    }
+    overlay.append(group);
   };
 
   /**
@@ -228,6 +333,9 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   const select = (next: CanvasSelection | undefined) => {
     selection = next;
     drawSelection();
+    // The newly selected element should drop its hover styling immediately.
+    hovered = undefined;
+    hoverLayer.replaceChildren();
   };
 
   const refreshSelection = () => {
@@ -258,11 +366,40 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     if (!matrix) {
       return { x: clientX, y: clientY };
     }
-    const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
-    return { x: point.x, y: point.y };
+    try {
+      const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
+      return { x: point.x, y: point.y };
+    } catch {
+      // svg-pan-zoom can leave a degenerate (all-zero) viewport matrix, which
+      // is not invertible. Falling back to screen coordinates keeps pointer
+      // handling alive instead of throwing out of every gesture.
+      return { x: clientX, y: clientY };
+    }
   };
 
   const onPointerDown = (event: PointerEvent) => {
+    // Connect handle: start drawing a new edge from the selected node.
+    if (
+      event.target instanceof Element &&
+      event.target.closest('[data-connect-handle]') &&
+      selection?.kind === 'node'
+    ) {
+      event.stopPropagation();
+      event.preventDefault();
+      const from = byId[selection.id];
+      if (!from) {
+        return;
+      }
+      connecting = { from };
+      options.panZoomState.suspendPan();
+      try {
+        svg.setPointerCapture(event.pointerId);
+      } catch {
+        // Best effort; the drag still works without capture.
+      }
+      return;
+    }
+
     // Edge waypoint handles take precedence: they sit on top of everything.
     const handle = event.target;
     if (
@@ -343,6 +480,38 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   };
 
   const onPointerMove = (event: PointerEvent) => {
+    if (connecting) {
+      const point = toDiagram(event.clientX, event.clientY);
+      const target = targetAt(event.target);
+      // Rubber band from the source node to the pointer, plus a halo on any
+      // node underneath so the drop target is unambiguous.
+      hoverLayer.replaceChildren();
+      const band = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      band.setAttribute('d', `M ${connecting.from.x},${connecting.from.y} L ${point.x},${point.y}`);
+      band.setAttribute('fill', 'none');
+      band.setAttribute('stroke', ACCENT);
+      band.setAttribute('stroke-width', '2');
+      band.setAttribute('stroke-dasharray', '6 4');
+      hoverLayer.append(band);
+      if (target?.kind === 'node' && target.id !== connecting.from.id) {
+        const node = byId[target.id];
+        if (node) {
+          const halo = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          halo.setAttribute('x', String(node.x - node.width / 2 - PADDING));
+          halo.setAttribute('y', String(node.y - node.height / 2 - PADDING));
+          halo.setAttribute('width', String(node.width + PADDING * 2));
+          halo.setAttribute('height', String(node.height + PADDING * 2));
+          halo.setAttribute('rx', '4');
+          halo.setAttribute('fill', ACCENT);
+          halo.setAttribute('fill-opacity', '0.15');
+          halo.setAttribute('stroke', ACCENT);
+          halo.setAttribute('stroke-width', '2');
+          hoverLayer.append(halo);
+        }
+      }
+      return;
+    }
+
     if (bending) {
       const bends = options.waypoints[bending.key];
       if (bends?.[bending.index]) {
@@ -356,8 +525,19 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
 
     if (!dragging || !pointerOrigin) {
       if (!dragging) {
-        const group = nodeGroupFrom(event.target);
-        svg.style.cursor = group && options.isManualLayout() ? 'grab' : '';
+        const target = targetAt(event.target);
+        const key = target ? `${target.kind}:${target.id}` : undefined;
+        // Repaint only when the hovered element actually changes; pointermove
+        // fires far too often to redraw on every event.
+        if (key !== hovered) {
+          hovered = key;
+          drawHover(target);
+        }
+        svg.style.cursor = target
+          ? target.kind === 'node' && options.isManualLayout()
+            ? 'grab'
+            : 'pointer'
+          : '';
       }
       return;
     }
@@ -374,6 +554,26 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
   };
 
   const endDrag = (event: PointerEvent) => {
+    if (connecting) {
+      const from = connecting.from;
+      connecting = undefined;
+      hoverLayer.replaceChildren();
+      try {
+        svg.releasePointerCapture(event.pointerId);
+      } catch {
+        // Nothing was captured; releasing is best-effort.
+      }
+      options.panZoomState.resumePan();
+      // Resolve the drop target by hit-testing the point, since the pointer
+      // capture means event.target is the SVG rather than the node under it.
+      const dropped = document.elementFromPoint(event.clientX, event.clientY);
+      const target = targetAt(dropped);
+      if (target?.kind === 'node' && target.id !== from.id) {
+        options.onConnect(from.id, target.id);
+      }
+      return;
+    }
+
     if (bending) {
       bending = undefined;
       try {
@@ -389,6 +589,11 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     if (!dragging) {
       return;
     }
+    // A click that never moved must not commit: doing so re-renders the
+    // diagram, which tears down the interaction layer and drops the selection
+    // the user just made.
+    const settled = dragging.node;
+    const didMove = settled.x !== dragging.originX || settled.y !== dragging.originY;
     const positions: Record<string, NodePosition> = {};
     for (const node of scene.nodes) {
       positions[node.id] = { x: node.x, y: node.y };
@@ -401,15 +606,24 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
       // Nothing was captured; releasing is best-effort.
     }
     options.panZoomState.resumePan();
-    // Persisting every node, not just the dragged one, pins the rest of the
-    // graph so Mermaid's next layout pass cannot shuffle it underneath us.
-    options.onMove(positions);
+    if (didMove) {
+      // Persisting every node, not just the dragged one, pins the rest of the
+      // graph so Mermaid's next layout pass cannot shuffle it underneath us.
+      options.onMove(positions);
+    }
+  };
+
+  const onPointerLeave = () => {
+    hovered = undefined;
+    hoverLayer.replaceChildren();
+    svg.style.cursor = '';
   };
 
   svg.addEventListener('pointerdown', onPointerDown);
   svg.addEventListener('pointermove', onPointerMove);
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
+  svg.addEventListener('pointerleave', onPointerLeave);
 
   // A re-render replaces every element, so any previous selection is stale.
   select(undefined);
@@ -419,6 +633,7 @@ export const attachCanvas = (svg: SVGSVGElement, options: CanvasOptions): (() =>
     svg.removeEventListener('pointermove', onPointerMove);
     svg.removeEventListener('pointerup', endDrag);
     svg.removeEventListener('pointercancel', endDrag);
+    svg.removeEventListener('pointerleave', onPointerLeave);
     removeLayers(svg);
   };
 };

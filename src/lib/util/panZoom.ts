@@ -129,8 +129,17 @@ export class PanZoomState {
       console.error('PanZoomState.restorePanZoom: pzoom is not initialized');
       return;
     }
-    this.pzoom.zoom(zoom);
-    this.pzoom.pan(pan);
+    // Restoring into a diagram that has not been laid out yet leaves
+    // svg-pan-zoom holding a degenerate (all-zero) transform matrix: the
+    // diagram renders invisible and every later inverse() throws. Falling back
+    // to a plain reset keeps the view usable instead.
+    try {
+      this.pzoom.zoom(zoom);
+      this.pzoom.pan(pan);
+    } catch (error) {
+      console.warn('PanZoomState.restorePanZoom: falling back to reset', error);
+      this.reset();
+    }
   }
 
   public resize() {

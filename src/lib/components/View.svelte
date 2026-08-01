@@ -1,12 +1,13 @@
 <script lang="ts">
   import { applyManualLayout, reflowEdges } from '$/canvas/applyLayout';
+  import { connectNodes } from '$/canvas/edits';
   import { attachCanvas } from '$/canvas/interaction.svelte';
   import { buildSourceMap } from '$/canvas/sourceMap';
   import type { State, ValidatedState } from '$/types';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { render as renderDiagram } from '$/util/mermaid';
   import { PanZoomState } from '$/util/panZoom';
-  import { updateCodeStore, validatedState } from '$/util/state.svelte';
+  import { updateCode, updateCodeStore, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
   import uniqueID from 'lodash-es/uniqueId';
@@ -57,6 +58,10 @@
     }
     detachCanvas = attachCanvas(graphDiv, {
       isManualLayout,
+      onConnect: (fromId, toId) =>
+        updateCode(connectNodes(validatedState.current.code, fromId, toId), {
+          updateDiagram: true
+        }),
       onMove: (nodePositions) => updateCodeStore({ nodePositions }),
       onReroute: (edgeWaypoints) => updateCodeStore({ edgeWaypoints }),
       panZoomState,

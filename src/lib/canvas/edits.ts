@@ -106,6 +106,24 @@ export const deleteSelection = (
   return lines.filter((_, index) => !doomed.has(index + 1)).join('\n');
 };
 
+/**
+ * Adds an edge between two existing nodes.
+ *
+ * Appended as a bare `A --> B` rather than being woven into an existing line,
+ * so the user's own formatting and any inline node definitions are left alone.
+ */
+export const connectNodes = (code: string, fromId: string, toId: string): string => {
+  if (fromId === toId) {
+    return code;
+  }
+  const lines = code.split('\n');
+  // Reuse the body's indentation so the new line does not look pasted in.
+  const indent =
+    /^(\s+)\S/.exec(lines.find((line, index) => index > 0 && line.trim()) ?? '')?.[1] ?? '    ';
+  const body = code.replace(/\s+$/, '');
+  return `${body}\n${indent}${fromId} --> ${toId}\n`;
+};
+
 export type LayoutDirection = 'BT' | 'LR' | 'RL' | 'TD';
 
 /** The direction currently declared on the diagram header, if any. */
