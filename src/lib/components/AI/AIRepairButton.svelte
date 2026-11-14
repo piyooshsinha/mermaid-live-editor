@@ -1,12 +1,20 @@
 <script lang="ts">
   /**
-   * Offers an AI fix whenever the diagram fails to parse.
+   * Repairs a diagram that fails to parse.
    *
-   * This rides on state the editor already computes — `validatedState.error` is
-   * populated on every keystroke — so the button appears exactly when it is
-   * useful and stays hidden otherwise.
+   * Sits in the error bar, where the mermaid.ai "create an account to repair
+   * with AI" upsell used to be — same place, but it now actually fixes the
+   * diagram instead of advertising. It rides on state the editor already
+   * computes: `validatedState.error` is populated on every keystroke, so the
+   * button appears exactly when it is useful.
+   *
+   * It is shown whether or not a provider is configured. With none set up it
+   * opens AI settings, which is how someone discovers the feature exists at
+   * the moment they need it.
    */
+  import AISettings from '$/components/AI/AISettings.svelte';
   import { Button } from '$/components/ui/button';
+  import { TID } from '$/constants';
   import { isConfigured } from '$/ai/config.svelte';
   import { acceptProposal, dismissProposal, proposal, runProposal } from '$/ai/proposal.svelte';
   import { repairDiagram } from '$/ai/tasks';
@@ -14,12 +22,17 @@
   import { logEvent } from '$/util/stats';
   import HealIcon from '~icons/material-symbols/healing-outline';
 
-  const error = $derived(validatedState.current.error);
   // Named `view`, not `state`: a local called `state` shadows the $state rune.
   const view = $derived(proposal.current);
-  const canRepair = $derived(Boolean(error) && isConfigured());
+  const configured = $derived(isConfigured());
+
+  let settingsOpen = $state(false);
 
   const repair = async () => {
+    if (!configured) {
+      settingsOpen = true;
+      return;
+    }
     const current = validatedState.current;
     if (!current.error) {
       return;
@@ -31,19 +44,18 @@
   };
 </script>
 
-{#if canRepair}
-  <div class="flex flex-col gap-2" data-testid="ai-repair">
-    {#if proposal.isRunning}
-      <span class="text-xs text-muted-foreground">Repairing…</span>
-    {:else if view.status === 'ready' && view.code}
-      <div class="flex items-center gap-2">
-        <Button size="sm" onclick={acceptProposal}>Apply fix</Button>
-        <Button size="sm" variant="outline" onclick={dismissProposal}>Dismiss</Button>
-      </div>
-    {:else}
-      <Button size="sm" variant="outline" onclick={repair}>
-        <HealIcon /> Fix with AI
-      </Button>
-    {/if}
+{#if proposal.isRunning}
+  <span class="text-xs whitespace-nowrap text-white/60">Repairing…</span>
+{:else if view.status === 'ready' && view.code}
+  <div class="flex items-center gap-2">
+    <Button size="sm" variant="accent" onclick={acceptProposal}>Apply fix</Button>
+    <Button size="sm" variant="outline" onclick={dismissProposal}>Dismiss</Button>
   </div>
+{:else}
+  <Button variant="accent" size="sm" data-testid={TID.aiRepairButton} onclick={repair}>
+    <HealIcon />
+    AI Repair
+  </Button>
 {/if}
+
+<AISettings bind:open={settingsOpen} />

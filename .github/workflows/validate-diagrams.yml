@@ -1,0 +1,38 @@
+# Fails the build when a Mermaid diagram stops parsing.
+#
+# Broken diagrams are easy to miss in review: Markdown still renders, the
+# diagram just turns into an error box on the rendered page. This catches that
+# in the PR instead.
+#
+# Deliberately no browser install. Validation only needs `mermaid.parse`, which
+# runs under jsdom, so this job stays fast; rendering to an image is what would
+# require a headless Chromium.
+name: Validate diagrams
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '**/*.mmd'
+      - '**/*.mermaid'
+  push:
+    branches: [develop, master]
+
+jobs:
+  diagrams:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node runs the TypeScript entry point directly, so there is no build
+          # step between checkout and the check.
+          node-version: '24'
+
+      - uses: pnpm/action-setup@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Validate Mermaid diagrams
+        run: pnpm lint:diagrams "**/*.md" "**/*.mmd" "**/*.mermaid"

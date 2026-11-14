@@ -1,4 +1,9 @@
 @import '@fontsource-variable/recursive/crsv.css';
+/* Diagram style presets reference these by family name in Mermaid's
+   themeVariables.fontFamily; without the face loaded the style would silently
+   fall back to a generic and look broken. */
+@import '@fontsource/architects-daughter/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
