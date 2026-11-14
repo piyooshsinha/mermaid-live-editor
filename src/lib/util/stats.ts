@@ -92,6 +92,7 @@ const delaysPerEvent = {
   aiAccept: noDelay,
   aiPrompt: noDelay,
   aiRepair: noDelay,
+  applyStyle: defaultDelay,
   bannerClick: noDelay,
   chooseEditor: noDelay,
   copyClipboard: defaultDelay,

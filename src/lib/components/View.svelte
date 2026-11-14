@@ -4,6 +4,7 @@
   import { attachCanvas } from '$/canvas/interaction.svelte';
   import { readLayout, writeLayout, type ManualLayout } from '$/canvas/layoutComment';
   import { buildSourceMap } from '$/canvas/sourceMap';
+  import { themeVariablesOf } from '$/styles/apply';
   import type { State, ValidatedState } from '$/types';
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { render as renderDiagram } from '$/util/mermaid';
@@ -37,6 +38,27 @@
       updateCodeStore({ pan, zoom });
     };
   };
+
+  /**
+   * The canvas takes its surface from the active style.
+   *
+   * A style sets Mermaid's `background`, but Mermaid only paints inside the
+   * diagram's own bounds — the pane around it still showed the app's theme.
+   * A light style on a dark app therefore looked half-applied. Letting the
+   * style own the whole pane is what makes it read as one designed surface.
+   */
+  const surface = $derived.by(() => {
+    const variables = themeVariablesOf(validatedState.current.mermaid);
+    return variables.background;
+  });
+
+  /** Grid dots drawn in the style's line colour, so they read on any surface. */
+  const gridDot = $derived.by(() => {
+    const variables = themeVariablesOf(validatedState.current.mermaid);
+    const line = variables.lineColor ?? '#888888';
+    // Mermaid colours are hex; a short alpha suffix keeps the dots subtle.
+    return /^#[0-9a-f]{6}$/i.test(line) ? `${line}40` : line;
+  });
 
   // Teardown for the interaction layer attached to the previous render.
   let detachCanvas: (() => void) | undefined;
@@ -207,7 +229,12 @@
 <div
   id="view"
   bind:this={view}
-  class={['h-full w-full', shouldShowGrid && `grid-bg-${mode.current}`, error && 'opacity-50']}>
+  class={[
+    'h-full w-full transition-colors duration-300',
+    shouldShowGrid && (surface ? 'grid-bg-styled' : `grid-bg-${mode.current}`),
+    error && 'opacity-50'
+  ]}
+  style={surface ? `background-color: ${surface}; --grid-dot: ${gridDot}` : undefined}>
   <div id="container" bind:this={container} class="h-full overflow-auto"></div>
 </div>
 
@@ -220,5 +247,12 @@
   .grid-bg-dark {
     background-size: 30px 30px;
     background-image: radial-gradient(circle, #46464646 2px, #0000 2px);
+  }
+
+  /* Grid for a styled canvas: the dot colour is derived from the style's own
+     line colour, so it reads on both dark and light surfaces. */
+  .grid-bg-styled {
+    background-size: 30px 30px;
+    background-image: radial-gradient(circle, var(--grid-dot) 2px, #0000 2px);
   }
 </style>

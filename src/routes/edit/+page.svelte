@@ -15,6 +15,7 @@
   import Preset from '$/components/Preset.svelte';
   import Share from '$/components/Share.svelte';
   import SyncRoughToolbar from '$/components/SyncRoughToolbar.svelte';
+  import StylePicker from '$/components/Styles/StylePicker.svelte';
   import Templates from '$/components/Templates.svelte';
   import * as Resizable from '$/components/ui/resizable';
   import { Switch } from '$/components/ui/switch';
@@ -134,6 +135,7 @@
             <div class="group flex shrink-0 flex-wrap justify-between gap-4 sm:gap-6">
               <Preset />
               <Templates />
+              <StylePicker />
               <Actions />
             </div>
           </div>
