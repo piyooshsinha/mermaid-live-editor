@@ -3,6 +3,8 @@
   import AIPanel from '$/components/AI/AIPanel.svelte';
   import AutoLayoutToggle from '$/components/Canvas/AutoLayoutToggle.svelte';
   import CanvasToolbar from '$/components/Canvas/CanvasToolbar.svelte';
+  import { openPalette } from '$/commands/palette.svelte';
+  import CommandPalette from '$/components/CommandPalette.svelte';
   import Card from '$/components/Card/Card.svelte';
   import DiagramDocButton from '$/components/DiagramDocumentationButton.svelte';
   import Editor from '$/components/Editor.svelte';
@@ -30,6 +32,7 @@
   import { initHandler } from '$/util/util';
   import { onMount } from 'svelte';
   import CodeIcon from '~icons/custom/code';
+  import SearchIcon from '~icons/material-symbols/search-rounded';
   import HistoryIcon from '~icons/material-symbols/history';
   import GearIcon from '~icons/material-symbols/settings-outline-rounded';
 
@@ -71,6 +74,24 @@
 
   let isHistoryOpen = $state(false);
 
+  /**
+   * How the palette reaches panels that own their own visibility.
+   *
+   * The AI card is always mounted and the library is a dialog behind its own
+   * trigger, so rather than lifting both components' state into this page the
+   * palette drives the affordances they already expose. Keeps the palette a
+   * way to reach features, not a second owner of their state.
+   */
+  const openPanel = (panel: 'ai' | 'library') => {
+    if (panel === 'library') {
+      document.querySelector<HTMLButtonElement>('[data-testid="open-library"]')?.click();
+      return;
+    }
+    const prompt = document.querySelector<HTMLTextAreaElement>('[data-testid="ai-prompt"]');
+    prompt?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    prompt?.focus();
+  };
+
   let editorPane: Resizable.Pane | undefined;
   $effect(() => {
     if (isMobile) {
@@ -93,6 +114,17 @@
   {/snippet}
 
   <Navbar mobileToggle={isMobile ? mobileToggle : undefined}>
+    <!-- A shortcut nobody knows about may as well not exist, so the palette
+         advertises itself. Hidden on mobile, where there is no ⌘K to press. -->
+    <button
+      class="hidden items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
+      onclick={openPalette}
+      title="Command palette"
+      data-testid="palette-trigger">
+      <SearchIcon class="size-3.5" />
+      <span>Search</span>
+      <kbd class="rounded border border-border px-1 py-px font-sans text-[10px]">⌘K</kbd>
+    </button>
     <Toggle bind:pressed={isHistoryOpen} size="sm" title="History" aria-label="History">
       <HistoryIcon />
     </Toggle>
@@ -162,5 +194,7 @@
 <!-- Fixed-position, so it is anchored to the selection rather than clipped by
      the diagram pane's overflow. -->
 <CanvasToolbar />
+
+<CommandPalette onOpenPanel={openPanel} />
 
 <EditorChooserModal bind:open={showEditorChooser} />
